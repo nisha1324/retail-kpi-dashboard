@@ -1,7 +1,8 @@
 import pandas as pd
 import pytest
 
-from app.kpis import filter_period, kpi_summary, monthly_kpis, same_period_last_year, yoy_change
+from app.kpis import (aov_bridge, cancelled_bulk_lines, driver_table, filter_period, kpi_summary,
+                      monthly_kpis, same_period_last_year, yoy_change)
 
 
 @pytest.fixture
@@ -46,3 +47,36 @@ def test_yoy():
     assert ch["a"] == pytest.approx(0.2) and ch["b"] is None
     s, e = same_period_last_year("2011-03-01", "2011-03-31")
     assert (s, e) == (pd.Timestamp("2010-03-01"), pd.Timestamp("2010-03-31"))
+
+
+def test_driver_table():
+    base = dict(InvoiceDate=pd.Timestamp("2011-01-01"), CustomerID=pd.NA)
+    cur = pd.DataFrame([dict(base, Invoice="1", Country="A", Revenue=100.0, IsReturn=False),
+                        dict(base, Invoice="C2", Country="A", Revenue=-10.0, IsReturn=True),
+                        dict(base, Invoice="3", Country="B", Revenue=50.0, IsReturn=False)])
+    prev = pd.DataFrame([dict(base, Invoice="4", Country="A", Revenue=60.0, IsReturn=False),
+                         dict(base, Invoice="5", Country="C", Revenue=40.0, IsReturn=False)])
+    t = driver_table(cur, prev, "Country").set_index("Country")
+    assert t.loc["A", "net"] == 90 and t.loc["A", "change"] == 30
+    assert t.loc["C", "net"] == 0 and t.loc["C", "change"] == -40
+    assert t["change"].sum() == 40
+    assert t["share_of_change"].sum() == pytest.approx(1.0)
+    assert t.loc["A", "return_rate"] == pytest.approx(0.1)
+    assert list(t.index) == ["B", "A", "C"]  # sorted by change
+
+
+def test_aov_bridge(df):
+    b = aov_bridge(df, df)
+    # 3 orders, 4 sale lines, £200 gross
+    assert b["lines_per_order"] == pytest.approx(4 / 3)
+    assert b["revenue_per_line"] == pytest.approx(50)
+
+
+def test_cancelled_bulk_lines():
+    d = pd.DataFrame({
+        "CustomerID": pd.array([1, 1, 2, 3], dtype="Int64"),
+        "StockCode": ["X", "X", "X", "Y"],
+        "Quantity": [20_000, -20_000, 20_000, -5],
+        "IsReturn": [False, True, False, True],
+    })
+    assert list(cancelled_bulk_lines(d)) == [True, True, False, False]
