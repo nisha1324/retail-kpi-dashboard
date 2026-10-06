@@ -1,8 +1,12 @@
 # Retail KPI dashboard (Streamlit)
 
-> 🚧 **In progress.** The data prep, the tested KPI layer and the overview, drivers and customers tabs are done. More views are coming (see the roadmap).
-
 An interactive KPI dashboard for a UK online gift wholesaler. It answers the questions a commercial manager asks every month: *Are we growing? Is it more orders or bigger orders? Are returns getting worse?* Every number is compared with the same period last year.
+
+## TL;DR
+- **Flat growth, heavy churn.** Net revenue rose only +2.3% (Jan–Nov 2011 vs 2010), with orders −3.7% and AOV +6.0%. Underneath, 37% of last year's customers (worth £1.10M) did not come back, and new customers filled the gap.
+- **Growth is overseas and in new products.** The UK (84% of revenue) grew +0.2%; non-UK grew +15.1%. Products with no 2010 sales brought 23% of 2011 revenue.
+- **Biggest single account risk:** one EIRE customer fell by £59.8k, about 73% of EIRE's whole decline.
+- **Returns are fine** (2.4% of gross sales, down from 2.6%) once two keying-error orders are removed.
 
 ## Data
 **UCI Online Retail II**: 1,067,371 invoice lines from a UK-based online retailer, Dec 2009 to Dec 2011.
@@ -71,6 +75,24 @@ The **Customers** tab shows new vs returning buyers, how many of last year's buy
 
 *Caveat:* the data starts in Dec 2009, so "new customer" counts for 2010 periods are overstated (many existing accounts look new).
 
+## Recommendations (ranked by £ at stake)
+| # | Action | Evidence | Owner |
+|---|---|---|---|
+| 1 | Win-back campaign for lapsed 2010 customers, largest first | 1,532 lapsed customers were worth £1.10M; winning back a quarter (~£275k) would beat the year's whole growth (+£195k) | Account management |
+| 2 | Account review with the top EIRE customer (14156) | −£59.8k, ~73% of EIRE's −£81.4k drop | Key account manager |
+| 3 | Find out why retained customers spend less | Retained customers spent −£341k | Sales + commercial |
+| 4 | Protect and grow the export accounts | Non-UK +£181k (+15.1%); Australia +£107k, France +£61k | Export sales |
+| 5 | Keep the new-product pipeline funded | New stock codes = 23% of 2011 net revenue (£1.94M) | Buying / product |
+| 6 | Push basket-building (bundles, "also bought") | AOV growth came from +8.5% lines per order, not bigger lines | E-commerce |
+| 7 | Confirm very large quantities at order entry | Two keying errors (£77k, £168k) distorted gross sales, AOV and returns | Operations / IT |
+
+## Limitations
+- One retailer, 2009–2011: the figures describe this business, not the sector.
+- The data starts in Dec 2009, so "new customer" counts for 2010 are overstated.
+- Revenue is price × quantity; there are no costs, so nothing here says anything about margin.
+- About 22% of clean lines have no customer ID; they count in revenue but not in customer metrics.
+- Only Jan–Nov is compared, because the data stops on 9 Dec 2011.
+
 ## How to run
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -82,10 +104,17 @@ streamlit run app/dashboard.py
 python scripts/export_driver_chart.py    # optional: rebuild the README charts
 python scripts/export_customer_chart.py
 ```
+The processed parquet (8 MB) is committed, so the dashboard runs straight after `pip install`; the download and prep steps are only needed to rebuild it.
+
 Use the filters to change the period and the country. YoY deltas are hidden when no data exists for the same period last year.
+
+## Deploy to Streamlit Community Cloud (free)
+1. Sign in at https://share.streamlit.io with GitHub.
+2. **Create app** → repo `nisha1324/retail-kpi-dashboard`, branch `main`, main file `app/dashboard.py`.
+3. Deploy. Community Cloud installs `requirements.txt` and reads the committed `data/processed/transactions.parquet`; no secrets are needed.
 
 ## Roadmap
 - [x] Data prep + KPI layer + overview page (KPI tiles, monthly trend vs last year)
 - [x] Drivers tab: country and product breakdowns, AOV split, keying-error filter
 - [x] Customers tab: new vs returning, retention, revenue bridge by customer group
-- [ ] Deployment notes for Streamlit Community Cloud, plus findings and recommendations
+- [x] Deployment notes for Streamlit Community Cloud, plus findings and recommendations
