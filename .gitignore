@@ -5,4 +5,5 @@ __pycache__/
 .ipynb_checkpoints/
 .pytest_cache/
 data/raw/
-data/processed/
+data/processed/*
+!data/processed/transactions.parquet
