@@ -8,8 +8,8 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from app.kpis import (aov_bridge, cancelled_bulk_lines, driver_table, filter_period, kpi_summary,  # noqa: E402
-                      monthly_kpis, same_period_last_year, yoy_change)
+from app.kpis import (aov_bridge, cancelled_bulk_lines, customer_mix, driver_table, filter_period,  # noqa: E402
+                      kpi_summary, monthly_kpis, retention, revenue_bridge, same_period_last_year, yoy_change)
 
 DATA = ROOT / "data" / "processed" / "transactions.parquet"
 THIS_YEAR, LAST_YEAR = "#2a78d6", "#eb6834"
@@ -47,6 +47,7 @@ drop_bulk = st.checkbox("Exclude cancelled bulk orders (≥10,000 units, ordered
                              "They don't change net revenue but inflate AOV, gross sales and the return rate.")
 if drop_bulk:
     df = df[~cancelled_bulk_lines(df)]
+history = df  # all countries, so "new customer" means new to the business
 if country != "All":
     df = df[df["Country"] == country]
 
@@ -64,7 +65,7 @@ def delta(key: str):
     return f"{ch[key]:+.1%} vs LY"
 
 
-overview, drivers = st.tabs(["Overview", "Drivers: countries and products"])
+overview, drivers, customers = st.tabs(["Overview", "Drivers: countries and products", "Customers"])
 
 with overview:
     tiles = st.columns(5)
@@ -106,39 +107,84 @@ with overview:
 with drivers:
     if not has_ly:
         st.info("Pick a period that has data for the same period last year to see what changed.")
-        st.stop()
+    else:
+        st.subheader("What moved order value?")
+        st.caption("AOV = lines per order × revenue per line. More lines means wider baskets; "
+                   "more revenue per line means bigger quantities or pricier items.")
+        b = aov_bridge(cur, prev)
+        a1, a2 = st.columns(2)
+        a1.metric("Lines per order", f"{b['lines_per_order']:.1f}",
+                  f"{b['lines_per_order'] / b['lines_per_order_ly'] - 1:+.1%} vs LY")
+        a2.metric("Revenue per line", f"£{b['revenue_per_line']:.2f}",
+                  f"{b['revenue_per_line'] / b['revenue_per_line_ly'] - 1:+.1%} vs LY")
 
-    st.subheader("What moved order value?")
-    st.caption("AOV = lines per order × revenue per line. More lines means wider baskets; "
-               "more revenue per line means bigger quantities or pricier items.")
-    b = aov_bridge(cur, prev)
-    a1, a2 = st.columns(2)
-    a1.metric("Lines per order", f"{b['lines_per_order']:.1f}",
-              f"{b['lines_per_order'] / b['lines_per_order_ly'] - 1:+.1%} vs LY")
-    a2.metric("Revenue per line", f"£{b['revenue_per_line']:.2f}",
-              f"{b['revenue_per_line'] / b['revenue_per_line_ly'] - 1:+.1%} vs LY")
+        st.subheader("Where did net revenue change?")
+        level = st.radio("Break down by", ["Country", "Product"], horizontal=True)
+        t = driver_table(cur, prev, level)
+        n = 8
+        top = pd.concat([t.head(n), t.tail(n)]).drop_duplicates(level)
+        top = top.assign(direction=["Gain" if c >= 0 else "Decline" for c in top["change"]])
+        bars = alt.Chart(top).mark_bar().encode(
+            x=alt.X("change:Q", title="Change in net revenue vs last year (£)", axis=alt.Axis(format="~s")),
+            y=alt.Y(f"{level}:N", sort=alt.EncodingSortField("change", order="descending"), title=None),
+            color=alt.Color("direction:N", title=None, legend=None,
+                            scale=alt.Scale(domain=["Gain", "Decline"], range=[THIS_YEAR, LAST_YEAR])),
+            tooltip=[f"{level}:N",
+                     alt.Tooltip("net:Q", title="Net £ (period)", format=",.0f"),
+                     alt.Tooltip("net_ly:Q", title="Net £ (last year)", format=",.0f"),
+                     alt.Tooltip("change:Q", title="Change £", format="+,.0f")],
+        )
+        st.altair_chart(bars, width="stretch")
+        st.caption(f"Top {n} gains and declines. Total change: £{t['change'].sum():+,.0f}.")
 
-    st.subheader("Where did net revenue change?")
-    level = st.radio("Break down by", ["Country", "Product"], horizontal=True)
-    t = driver_table(cur, prev, level)
-    n = 8
-    top = pd.concat([t.head(n), t.tail(n)]).drop_duplicates(level)
-    top = top.assign(direction=["Gain" if c >= 0 else "Decline" for c in top["change"]])
-    bars = alt.Chart(top).mark_bar().encode(
-        x=alt.X("change:Q", title="Change in net revenue vs last year (£)", axis=alt.Axis(format="~s")),
-        y=alt.Y(f"{level}:N", sort=alt.EncodingSortField("change", order="descending"), title=None),
-        color=alt.Color("direction:N", title=None, legend=None,
-                        scale=alt.Scale(domain=["Gain", "Decline"], range=[THIS_YEAR, LAST_YEAR])),
-        tooltip=[f"{level}:N",
-                 alt.Tooltip("net:Q", title="Net £ (period)", format=",.0f"),
-                 alt.Tooltip("net_ly:Q", title="Net £ (last year)", format=",.0f"),
-                 alt.Tooltip("change:Q", title="Change £", format="+,.0f")],
-    )
-    st.altair_chart(bars, width="stretch")
-    st.caption(f"Top {n} gains and declines. Total change: £{t['change'].sum():+,.0f}.")
+        with st.expander(f"Full table by {level.lower()}"):
+            st.dataframe(t.style.format({"net": "£{:,.0f}", "net_ly": "£{:,.0f}", "change": "£{:+,.0f}",
+                                         "share_of_change": "{:+.0%}", "returns": "£{:,.0f}",
+                                         "returns_ly": "£{:,.0f}", "return_rate": "{:.1%}",
+                                         "return_rate_ly": "{:.1%}"}, na_rep="–"), hide_index=True)
 
-    with st.expander(f"Full table by {level.lower()}"):
-        st.dataframe(t.style.format({"net": "£{:,.0f}", "net_ly": "£{:,.0f}", "change": "£{:+,.0f}",
-                                     "share_of_change": "{:+.0%}", "returns": "£{:,.0f}",
-                                     "returns_ly": "£{:,.0f}", "return_rate": "{:.1%}",
-                                     "return_rate_ly": "{:.1%}"}, na_rep="–"), hide_index=True)
+with customers:
+    mix = customer_mix(history, cur, start)
+    st.subheader("Who bought in this period?")
+    st.caption("New = first purchase in the data falls inside the period. Data starts in Dec 2009, "
+               "so for 2010 periods many existing accounts look new.")
+    c = st.columns(4)
+    c[0].metric("New customers", f"{mix['new_customers']:,}")
+    c[1].metric("Returning customers", f"{mix['returning_customers']:,}")
+    c[2].metric("Net revenue from new", f"£{mix['new_revenue']:,.0f}")
+    c[3].metric("Net revenue from returning", f"£{mix['returning_revenue']:,.0f}")
+    st.caption(f"£{mix['unidentified_revenue']:,.0f} of net revenue has no customer ID (guest checkouts).")
+
+    if not has_ly:
+        st.info("Pick a period that has data for the same period last year to see retention.")
+    else:
+        r, rt = retention(cur, prev)
+        st.subheader("Did last year's customers come back?")
+        c = st.columns(3)
+        c[0].metric("Retention rate", f"{r['retention_rate']:.1%}",
+                    help="Share of last year's buyers (same period) who bought again in this period.")
+        c[1].metric("Last year's spend of lost customers", f"£{r['lost_revenue_ly']:,.0f}")
+        c[2].metric("Spend change of retained customers", f"£{r['retained_change']:+,.0f}")
+
+        b = revenue_bridge(cur, prev)
+        labels = {"lost": "Lost customers", "retained": "Retained customers (spend change)",
+                  "gained": "New or won-back customers", "unidentified": "No customer ID"}
+        bridge = pd.DataFrame({"part": [labels[x] for x in b], "change": list(b.values())})
+        bridge["direction"] = ["Gain" if v >= 0 else "Decline" for v in bridge["change"]]
+        st.subheader("Change in net revenue by customer group")
+        bars = alt.Chart(bridge).mark_bar().encode(
+            x=alt.X("change:Q", title="Change in net revenue vs last year (£)", axis=alt.Axis(format="~s")),
+            y=alt.Y("part:N", sort=list(labels.values()), title=None),
+            color=alt.Color("direction:N", legend=None,
+                            scale=alt.Scale(domain=["Gain", "Decline"], range=[THIS_YEAR, LAST_YEAR])),
+            tooltip=["part:N", alt.Tooltip("change:Q", title="Change £", format="+,.0f")],
+        )
+        st.altair_chart(bars, width="stretch")
+        st.caption(f"The parts add up to the total change: £{sum(b.values()):+,.0f}.")
+
+        with st.expander("Biggest customer declines (lost or spending less)"):
+            country_of = history.groupby("CustomerID")["Country"].agg(lambda s: s.mode().iat[0])
+            worst = rt.head(15).assign(Country=lambda d: d["CustomerID"].map(country_of))
+            st.dataframe(worst[["CustomerID", "Country", "status", "net_ly", "net", "change"]]
+                         .style.format({"net": "£{:,.0f}", "net_ly": "£{:,.0f}", "change": "£{:+,.0f}"}),
+                         hide_index=True)

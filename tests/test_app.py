@@ -20,7 +20,20 @@ def test_dashboard_renders():
 @pytest.mark.skipif(not DATA.exists(), reason="run scripts/prepare_data.py first")
 def test_drivers_tab_both_levels():
     at = AppTest.from_file("../app/dashboard.py", default_timeout=120).run()
-    assert [t.label for t in at.tabs] == ["Overview", "Drivers: countries and products"]
+    assert [t.label for t in at.tabs] == ["Overview", "Drivers: countries and products", "Customers"]
     assert "Lines per order" in [m.label for m in at.metric]
     at.radio[0].set_value("Product").run()
+    assert not at.exception
+
+
+@pytest.mark.skipif(not DATA.exists(), reason="run scripts/prepare_data.py first")
+def test_customers_tab():
+    at = AppTest.from_file("../app/dashboard.py", default_timeout=120).run()
+    assert at.tabs[2].label == "Customers"
+    labels = [m.label for m in at.metric]
+    assert "Retention rate" in labels and "New customers" in labels
+    for m in at.metric:
+        if m.label in ("New customers", "Retention rate", "Last year's spend of lost customers"):
+            print(m.label, m.value)
+    at.selectbox[0].set_value("EIRE").run()
     assert not at.exception
