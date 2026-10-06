@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from app.kpis import (aov_bridge, cancelled_bulk_lines, driver_table, filter_period, kpi_summary,
+from app.kpis import (aov_bridge, cancelled_bulk_lines, customer_mix, driver_table, retention, revenue_bridge, filter_period, kpi_summary,
                       monthly_kpis, same_period_last_year, yoy_change)
 
 
@@ -80,3 +80,38 @@ def test_cancelled_bulk_lines():
         "IsReturn": [False, True, False, True],
     })
     assert list(cancelled_bulk_lines(d)) == [True, True, False, False]
+
+
+def test_customer_mix(df):
+    cur = filter_period(df, "2010-01-20", "2010-02-28")
+    m = customer_mix(df, cur, "2010-01-20")
+    # 11 first buys on 02-01 (new); 10 only has a return here, so it is not counted as a
+    # customer but its return still lands in returning revenue; invoice 2 has no ID
+    assert m["returning_customers"] == 0 and m["new_customers"] == 1
+    assert m["returning_revenue"] == -10 and m["new_revenue"] == 100
+    assert m["unidentified_revenue"] == 50
+    assert sum(v for k, v in m.items() if k.endswith("revenue")) == kpi_summary(cur)["net_revenue"]
+
+
+def test_retention():
+    d = pd.DataFrame({
+        "Invoice": ["a", "b", "c", "d", "e"],
+        "InvoiceDate": pd.to_datetime(["2010-03-01", "2010-03-02", "2011-03-01", "2011-03-02", "2011-03-03"]),
+        "CustomerID": pd.array([1, 2, 1, 3, 1], dtype="Int64"),
+        "Revenue": [100.0, 40.0, 70.0, 25.0, -5.0],
+        "IsReturn": [False, False, False, False, True],
+    })
+    s, t = retention(d[d["InvoiceDate"].dt.year == 2011], d[d["InvoiceDate"].dt.year == 2010])
+    assert s["ly_customers"] == 2 and s["retained"] == 1 and s["retention_rate"] == 0.5
+    assert s["lost_revenue_ly"] == 40      # customer 2 did not come back
+    assert s["retained_change"] == -35     # customer 1: 65 net vs 100
+    assert 3 not in set(t["CustomerID"])   # new customers are not in the table
+
+
+def test_revenue_bridge_adds_up(df):
+    cur, prev = filter_period(df, "2010-01-20", "2010-02-28"), filter_period(df, "2010-01-01", "2010-01-19")
+    b = revenue_bridge(cur, prev)
+    assert b["lost"] == -60          # customer 10: 50 of sales, then only a -10 return
+    assert b["gained"] == 100        # customer 11
+    assert b["unidentified"] == 50
+    assert sum(b.values()) == kpi_summary(cur)["net_revenue"] - kpi_summary(prev)["net_revenue"]
