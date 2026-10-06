@@ -1,6 +1,6 @@
 # Retail KPI dashboard (Streamlit)
 
-> 🚧 **In progress.** The data prep, the tested KPI layer, the overview tab and the drivers tab are done. More views are coming (see the roadmap).
+> 🚧 **In progress.** The data prep, the tested KPI layer and the overview, drivers and customers tabs are done. More views are coming (see the roadmap).
 
 An interactive KPI dashboard for a UK online gift wholesaler. It answers the questions a commercial manager asks every month: *Are we growing? Is it more orders or bigger orders? Are returns getting worse?* Every number is compared with the same period last year.
 
@@ -57,6 +57,20 @@ The **Drivers** tab splits the change in net revenue (+£195,333) by country or 
 
 **So what?** Growth depends on a few export accounts and on new products, while the home market is flat. The commercial team should find out why EIRE fell (it was the largest export market in 2010), protect the Australian and French accounts, and keep the new-product pipeline going, because about a quarter of each year's revenue comes from lines that did not exist the year before.
 
+## Customers: who kept buying, Jan–Nov 2011 vs 2010
+The **Customers** tab shows new vs returning buyers, how many of last year's buyers came back, and a revenue bridge that splits the change in net revenue by customer group (the parts add up exactly; `revenue_bridge()` in `app/kpis.py`).
+
+![Change in net revenue by customer group](docs/customer_bridge_2011_vs_2010.png)
+
+- **Retention is the weak spot.** Only 2,595 of the 4,127 customers who bought in Jan–Nov 2010 bought again in Jan–Nov 2011 (**62.9%**). The 1,532 who did not return had spent **£1.10M** the year before.
+- **Customers who stayed spent less**: −£340,577 in total.
+- **New and won-back customers filled the gap**: +£1.39M. 1,509 customers bought for the first time in 2011 and brought £1.34M of net revenue. Revenue without a customer ID (guest orders) rose £250k.
+- **The EIRE decline is mostly one account.** Customer 14156 fell from £173,165 to £113,371 (−£59,793), about 73% of EIRE's −£81,382. It is also the single largest customer decline in the data.
+
+**So what?** The flat headline (+2.3%) hides heavy churn: the business replaced about a third of its customers in a year. Acquisition is working, but winning back even a quarter of the £1.10M lost would add more than the year's whole growth. Account management should call the large accounts that lapsed or shrank (the dashboard lists them), starting with the top EIRE account.
+
+*Caveat:* the data starts in Dec 2009, so "new customer" counts for 2010 periods are overstated (many existing accounts look new).
+
 ## How to run
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -65,12 +79,13 @@ python scripts/download_data.py      # ~46 MB
 python scripts/prepare_data.py       # ~1.5 min, writes data/processed/transactions.parquet
 pytest                               # KPI unit tests + app smoke test
 streamlit run app/dashboard.py
-python scripts/export_driver_chart.py  # optional: rebuilds the README chart
+python scripts/export_driver_chart.py    # optional: rebuild the README charts
+python scripts/export_customer_chart.py
 ```
 Use the filters to change the period and the country. YoY deltas are hidden when no data exists for the same period last year.
 
 ## Roadmap
 - [x] Data prep + KPI layer + overview page (KPI tiles, monthly trend vs last year)
 - [x] Drivers tab: country and product breakdowns, AOV split, keying-error filter
-- [ ] Customer view (new vs returning, retention)
+- [x] Customers tab: new vs returning, retention, revenue bridge by customer group
 - [ ] Deployment notes for Streamlit Community Cloud, plus findings and recommendations
